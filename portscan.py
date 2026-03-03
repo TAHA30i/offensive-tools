@@ -82,6 +82,8 @@ def main() -> None:
     parser.add_argument('-th', '--threads', type=int, default=25, help="Specify number of threads (default: 25)")
     args = parser.parse_args()
 
+    print(f'{green}[info] if you see this the tool is working\n[info] if you see a "to many open files" error  , relax! it just mean that you reached the file limit that your os gave you ')
+
     with ThreadPoolExecutor(max_workers=args.threads) as executor:
         for port in range(1, args.port + 1):
             executor.submit(scan, args.ip, port, args.timeout)
