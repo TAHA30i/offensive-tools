@@ -1,93 +1,94 @@
 import socket
+import selectors
+from sys import stdout
+import errno
+import argparse
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
-from time import sleep
-from sys import stdout
-from colorama import Fore , Style , init
-import argparse
+from colorama import Fore, Style, init
 
-
-# global
-init(autoreset=True)
-open_ports = []
+# ---------------- GLOBALS ----------------
+found_ports = []
 lock = Lock()
-
 # colors
+init(autoreset=True)
 red = Fore.RED
 green = Fore.GREEN
 yellow = Fore.YELLOW
 
+# ---------------- SCAN LOGIC ----------------
+def scan(ip, port, timeout) -> None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
 
-# logic
-def scan(ip , port_range , timeout) -> None:
-    print(f'{yellow} info : this a basic portscanner')
-    print(f'{yellow} info : note that will be easily blocked by firewalls')
+    try:
+        attempt = sock.connect_ex((ip, port))
 
-    with socket( socket.AF_INET , socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
+        if attempt == 0:
+            with lock:
+                found_ports.append(port)
 
-        try:
-            for port  in range(port_range):
-                if sock.connect_ex(( ip , port )) == 0:
-                    with lock:
-                        open_ports.append(port)
+        elif attempt == errno.EINPROGRESS:
+            sel = selectors.DefaultSelector()
+            sel.register(sock, selectors.EVENT_WRITE)
 
-                with lock:
-                    stdout.write(f"reached : {port}")
-                    stdout.flush()
+            events = sel.select(timeout=timeout)
+            for key, mask in events:
+                sock_obj = key.fileobj
+                if mask & selectors.EVENT_WRITE:
+                    sock_opt = sock_obj.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                    if sock_opt == 0:
+                        with lock:
+                            found_ports.append(port)
+        else:
+            pass
 
-        except Exception as exp:
-            print(f"{red} error : {exp}")
+    except Exception as exp:
+        stdout.write(f"\r{red}Error  at port {port} :  {exp}")
+        stdout.flush()
 
-
-def id_services():
-    print(f"{green} service identification ")
-    print(f"{yellow} info : this a basic service recognition , its unreliable") # for a robust recon , we might use payload based recon
-
-    lports = open_ports # reducing the scope
-
-    if not lports:
-        print(f"{yellow} info : No ports open")
-        exit(1)
-
-    for port in lports:
-        try:
-            service = socket.getservbyport(port)
-
-        except OSError:
-            service = "-"
-
-        finally:
-            print(f"{green} port : {port} | service {service}")
+    finally:
+        sock.close()
 
 
+#--------- SERVICE IDENTIFICATION -----
+
+def id_service():
+	print(f"\n{yellow}[info] Scanning finished")
+	print(f"{yellow}[info] beware service identification may be inaccurate")
+	print("-" * (len(found_ports) + 10) + ' Results ' + "-" * (len(found_ports) + 10))
+
+	lports = sorted(found_ports)
+
+	for port in lports:
+		try:
+			service = (socket.getservbyport(port)).upper()
+
+		except OSError:
+			service = "TCP"
+
+		finally:
+			print(f"\t{port} \t\t{service}")
+
+#--------------------------------------
+
+
+# ---------------- MAIN ----------------
 def main() -> None:
-    parser = argparse.ArgumentParser(description="a basic portscanner ")
-
-    parser.add_argument('-i' ,  type=str , default='127.0.0.1' ,  help="specify the target ip address")
-    parser.add_argument('-p' ,  type=int , default=1024 , help=" set the port range ( default is 1024 )")
-    parser.add_argument('-t' , '--timeout' , type=float , default=0.5 , help="set a timeout ( default is 0.5 )")
-    parser.add_argument('-w' , '-workers' , type=int , default=25 , help="set the thread count ( default is 25 )")
-
+    parser = argparse.ArgumentParser(description="A simple BannerGrabber (supported protocols: FTP, HTTP, TCP)")
+    parser.add_argument('-i', '--ip', required=True, type=str, help="Specify the target IP")
+    parser.add_argument('-p', '--port', required=True, type=int, help="Specify the max port number")
+    parser.add_argument('-t', '--timeout', type=float, default=5.0, help="Specify timeout in seconds (default: 5)")
+    parser.add_argument('-th', '--threads', type=int, default=25, help="Specify number of threads (default: 25)")
     args = parser.parse_args()
 
+    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        for port in range(1, args.port + 1):
+            executor.submit(scan, args.ip, port, args.timeout)
 
-    print('\t \t INFO')
-    print("#" * 50)
-    print(f"Target : {args.i}")
-    print(f"Port-Range : {args.p}")
-    print(f"Timeout : {args.timeout}")
-    print(f"Thread-Count : {args.w}")
-    print("#" * 50)
 
-    sleep(1)
+    id_service()
 
-    print("#" * 50)
-    with ThreadPoolExecutor(max_workers=args.w) as executor:
-        executor.submit(scan , args.i , args.p , args.timeout)
-
-    sleep(1)
-    id_services()
 
 if __name__ == "__main__":
-        main()
+    main()
