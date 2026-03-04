@@ -49,7 +49,7 @@ def scan(ip, port, timeout) -> None:
 
     finally:
         sock.close()
-	sel.close()
+        sel.close()
 
 #--------- SERVICE IDENTIFICATION -----
 
