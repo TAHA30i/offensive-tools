@@ -15,6 +15,35 @@ init(autoreset=True)
 red = Fore.RED
 green = Fore.GREEN
 yellow = Fore.YELLOW
+blue = Fore.BLUE
+#--------------- UI ELEMENTS ---------------
+
+def show_info(ip , port_range , timeout , thread_count) -> None:
+	art = r"""                                         
+ _ __  _   _       ___  ___ __ _ _ __  
+| '_ \| | | |_____/ __|/ __/ _` | '_ \ 
+| |_) | |_| |_____\__ \ (_| (_| | | | |
+| .__/ \__, |     |___/\___\__,_|_| |_|
+|_|    |___/                           
+
+"""
+
+	print(art)
+
+	info = {
+		"Target Ip" : ip,
+		"Range" : port_range,
+		"Timeout" : timeout,
+		"Thread Count" : thread_count
+	}
+
+	print("┌" +  "─" * 50 + "┐")
+
+	for key , value in info.items():
+		print(f"│ {blue}[*]{key} : {value}")
+
+	print("└" +  "─" * 50 + "┘")
+
 
 # ---------------- SCAN LOGIC ----------------
 def scan(ip, port, timeout) -> None:
@@ -54,9 +83,10 @@ def scan(ip, port, timeout) -> None:
 #--------- SERVICE IDENTIFICATION -----
 
 def id_service():
-	print(f"\n{yellow}[info] Scanning finished")
+
+	print(f"{yellow}[info] verifying services running on open ports")
 	print(f"{yellow}[info] beware service identification may be inaccurate")
-	print("-" * (len(found_ports) + 10) + ' Results ' + "-" * (len(found_ports) + 10))
+	print("─" * (len(found_ports) + 10) + ' Results ' + "─" * (len(found_ports) + 10))
 
 	lports = sorted(found_ports)
 
@@ -82,13 +112,14 @@ def main() -> None:
     parser.add_argument('-th', '--threads', type=int, default=25, help="Specify number of threads (default: 25)")
     args = parser.parse_args()
 
-    print(f'{green}[info] if you see this the tool is working\n[info] if you see a "to many open files" error  , relax! it just mean that you reached the file limit that your os gave you ')
+    show_info(args.ip , args.port , args.timeout , args.threads)
+
 
     with ThreadPoolExecutor(max_workers=args.threads) as executor:
         for port in range(1, args.port + 1):
             executor.submit(scan, args.ip, port, args.timeout)
 
-
+    print(f"{green}[success] finished scanning , found {len(found_ports)}/{args.port}")
     id_service()
 
 
