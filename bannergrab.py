@@ -7,16 +7,42 @@ init(autoreset=True)
 red = Fore.RED
 green  = Fore.GREEN
 yellow  = Fore.YELLOW
-
+blue = Fore.BLUE
 
 # tui
 def box(text):
-    width = len(text) + 2
-    print("┌" + "─" * width + "┐")
-    print("│ " + text + " │")
-    print("└" + "─" * width + "┘")
+    print("#" * 50)
+    print('\n' + text) # some requests send '\n'
+    print("#" * 50)
 
 
+def show_info(ip , port , timeout , protocol) -> None:
+
+	art = r"""
+	                           _     
+ _ __  _   _        __ _ _ __ __ _| |__  
+| '_ \| | | |_____ / _` | '__/ _` | '_ \ 
+| |_) | |_| |_____| (_| | | | (_| | |_) |
+| .__/ \__, |      \__, |_|  \__,_|_.__/ 
+|_|    |___/       |___/                 
+
+"""
+
+	print(art)
+
+	info = {
+		"Target" : ip,
+		"Port" : port,
+		"Timeout" : timeout,
+		"Protocol" : protocol
+	}
+
+	print( '┌' + "─" * 50 + '┐')
+
+	for key , value in info.items():
+		print(f"│{blue}[*] {key}.....: {value}")
+
+	print( '└' + "─" * 50 + '┘')
 
 # logic
 def grab(ip , port , timeout , reply_size) -> None:
@@ -34,9 +60,7 @@ def grab(ip , port , timeout , reply_size) -> None:
 				data = sock.recv(reply_size).decode()
 				print(f"{yellow}[info] received a buffer with the size = {len(data)}")
 
-				print("─" * len(data) + '\n' )
-				print(data)
-				print("─" * len(data))
+				box(data)
 
 		except Exception as exp:
 			print(f"{red}[error] failed to continue due to {exp}")
@@ -53,7 +77,7 @@ def grab_http(ip , port , timeout , reply_size) -> None:
 			REQ = f""" 
 
 			GET / HTTP/1.1\r\n
-			Host: {ip}\r\n
+			Host: Anon\r\n
 			Connection: close\r\n\r\n
 
 			"""
@@ -69,10 +93,7 @@ def grab_http(ip , port , timeout , reply_size) -> None:
 				data = sock.recv(reply_size).decode()
 				print(f"{yellow}[info] received a buffer with the size = {len(data)}")
 
-				print("─" * len(data))
-				print(data)
-				print("─" * len(data))
-
+				box(data)
 		except Exception as exp:
 			print(f"{red}[error] failed to continue due to {exp}")
 
@@ -97,9 +118,7 @@ def grab_ftp(ip , port , timeout , reply_size) -> None:
 				data = sock.recv(reply_size).decode().split()
 				print(f"{yellow}[info] received a buffer with the size = {len(data)}")
 
-				print("─" * len(data))
-				print(data)
-				print("─" * len(data))
+				box(data)
 
 		except Exception as exp:
 			print(f"{red}[error] failed to continue due to {exp}")
@@ -110,7 +129,7 @@ def grab_ftp(ip , port , timeout , reply_size) -> None:
 def main() -> None:
 	parser = argparse.ArgumentParser(description="a simple Bannergraber ( supported protocols : FTP , HTTP , TCP )")
 
-	parser.add_argument('-i' , '--ip' , required=True , type=str , help="specify the target ip")
+	parser.add_argument('-i' , '--ip' , required=True , type=str , help="specify the target ip ( CAN BE A URL )")
 	parser.add_argument('-p' , "--port" , required=True , type=int , help="specify the port number")
 	parser.add_argument('--proto' , type=str , default="tcp" , help="specify the protocol (default is TCP )")
 	parser.add_argument('-t' , '--timeout' , type=float , default=5.0 , help="specify the timeout (default is 5 seconds )")
@@ -118,6 +137,8 @@ def main() -> None:
 
 	args = parser.parse_args()
 
+
+	show_info(args.ip , args.port , args.timeout , args.proto)
 
 
 	match(args.proto.lower()):
