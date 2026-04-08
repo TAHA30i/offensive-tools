@@ -1,120 +1,158 @@
-import requests
+"""
+A simple ASYNC directory Brute Force 
+
++ Please Use it for Ethical Usage , this script is only meant for teaching and learning
+    You are at Your Own Risk
+"""
+
+import asyncio
+import aiohttp
+import aiofiles
 import argparse
-import time
-import sys
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
-from colorama import Fore, Style, init
 
-init(autoreset=True)
+# =========================
+# GLOBALS
+# =========================
+FOUND_URLS = []
+semaphore = asyncio.Semaphore(500)
 
-found = []
-lock = Lock()
+# wildcard globals
+USE_BASELINE = False
+BASELINE_LENGTH = 0
 
-# Stats
-total_checked = 0
-start_time = None
-
-
-def banner():
-    print(Fore.CYAN + r"""
-
-             ____  _      _     
- _ __  _   _|  _ \(_)_ __| |__  
-| '_ \| | | | | | | | '__| '_ \ 
-| |_) | |_| | |_| | | |  | |_) |
-| .__/ \__, |____/|_|_|  |_.__/ 
-|_|    |___/    
-
-    Threaded Dir Scanner (Lab Use Only)
-""" + Style.RESET_ALL)
+#==================
+# COLORS
+#==================
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RED = '\033[91m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
 
 
-def scan(base_url, path, timeout):
-    global total_checked
+# =========================
+# CORE LOGIC
+# =========================
+async def get_url(session: aiohttp.ClientSession, url: str):
+    async with semaphore:
+        try:
+            async with session.get(url) as resp:
+                body = await resp.text()
+                length = len(body)
 
-    url = f"{base_url}/{path.strip()}"
+                #  wildcard filtering
+                if USE_BASELINE:
+                    if abs(length - BASELINE_LENGTH) < 10:
+                        return
 
+                if resp.status == 200:
+                    FOUND_URLS.append(f'[{GREEN}200{RESET}] {url}')
+                elif resp.status in [300, 301, 302, 307, 401, 403]:
+                    FOUND_URLS.append(f'[{YELLOW}{resp.status}{RESET}] {url}')
+
+        except aiohttp.ClientError:
+            pass
+
+
+async def open_wordlist(path: str) -> list:
     try:
-        r = requests.get(url, timeout=timeout)
+        async with aiofiles.open(path, mode='r') as f:
+            content = await f.read()
+            return content.split()
 
-        with lock:
-            total_checked += 1
-
-        if r.status_code != 404:
-            with lock:
-                found.append((path.strip(), r.status_code))
-
-                if 200 <= r.status_code < 300:
-                    color = Fore.GREEN
-                elif 300 <= r.status_code < 400:
-                    color = Fore.YELLOW
-                else:
-                    color = Fore.RED
-
-                print(f"{color}[{r.status_code}] {path.strip()}")
-
-    except requests.RequestException:
-        with lock:
-            total_checked += 1
+    except FileNotFoundError:
+        raise FileNotFoundError(f"{RED}{path} is not Found!{RESET}")
 
 
-def progress(total_words):
-    while total_checked < total_words:
-        elapsed = time.time() - start_time
-        rps = total_checked / elapsed if elapsed > 0 else 0
-
-        sys.stdout.write(
-            f"\rChecked: {total_checked}/{total_words} | "
-            f"Speed: {rps:.2f} req/s"
-        )
-        sys.stdout.flush()
-        time.sleep(0.2)
+async def time_and_exec(session: aiohttp.ClientSession, url: str, timeout: float):
+    try:
+        await asyncio.wait_for(get_url(session, url), timeout=timeout)
+    except asyncio.TimeoutError:
+        pass
 
 
-def main():
-    global start_time
+async def detect_wild_card(url: str, session: aiohttp.ClientSession) -> dict:
+    target = url.rstrip('/') + '/idontexist123456'
 
-    parser = argparse.ArgumentParser(description="Threaded Dir Scanner (Lab Only)")
-    parser.add_argument("-u", "--url", required=True)
-    parser.add_argument("-w", "--wordlist", required=True)
-    parser.add_argument("-t", "--threads", type=int, default=30)
-    parser.add_argument("--timeout", type=float, default=3.0)
-
-    args = parser.parse_args()
-
-    banner()
-
-    with open(args.wordlist, "r") as f:
-        words = f.readlines()
-
-    total_words = len(words)
-    start_time = time.time()
-
-    from threading import Thread
-    prog_thread = Thread(target=progress, args=(total_words,))
-    prog_thread.start()
+    async with session.get(target) as resp:
+        body = await resp.text()
+        return {
+            "status": resp.status,
+            "length": len(body)
+        }
 
 
+# =========================
+# CLI
+# =========================
+def arguments():
+    parser = argparse.ArgumentParser(description="Async directory brute forcer")
 
-    with ThreadPoolExecutor(max_workers=args.threads) as executor:
-        for word in words:
-            executor.submit(scan, args.url.rstrip("/"), word, args.timeout)
+    parser.add_argument('url', type=str, help='Specify the target URL')
+    parser.add_argument('-w', '--wordlist', required=True, type=str, help='Path to wordlist file')
+    parser.add_argument('-t', '--timeout', type=float, default=0.5, help='Request timeout')
+    parser.add_argument('--detectWildCard', action='store_true', help='Detect wildcard responses')
 
-    prog_thread.join()
-
-    elapsed = time.time() - start_time
-
-    print("\n\n" + Fore.CYAN + "=" * 50)
-    print(Fore.CYAN + "Scan Finished")
-    print(f"Time: {elapsed:.2f} seconds")
-    print(f"Total Checked: {total_checked}")
-    print(f"Found: {len(found)}")
-    print("=" * 50)
-
-    for path, code in sorted(found):
-        print(f"{path} -> {code}")
+    return parser.parse_args()
 
 
+# =========================
+# ENTRY POINT
+# =========================
+async def main() -> None:
+    global USE_BASELINE, BASELINE_LENGTH
+
+    args = arguments()
+
+    words: list = await open_wordlist(args.wordlist)
+
+    print('#' * 45)
+    print(f'# [{BLUE}INFO{RESET}] TARGET = {args.url}')
+    print(f'# [{BLUE}INFO{RESET}] WORD-COUNT = {len(words)}')
+    print(f'# [{BLUE}INFO{RESET}] TIMEOUT = {args.timeout}')
+    print(f'# [{BLUE}INFO{RESET}] WILDCARD DETECTION = {args.detectWildCard}')
+    print('#' * 45)
+
+    async with aiohttp.ClientSession() as session:
+
+        # 🔍 wildcard detection
+        if args.detectWildCard:
+            baseline = await detect_wild_card(args.url, session)
+
+            print(f"[{YELLOW}INFO{RESET}] Random response → {baseline['status']} (len={baseline['length']})")
+
+            choice = input("Use wildcard filtering? [Y/n]: ").lower()
+
+            if choice in ['y', 'yes', '']:
+                USE_BASELINE = True
+                BASELINE_LENGTH = baseline['length']
+                print(f"[{YELLOW}INFO{RESET}] Filtering ENABLED")
+            else:
+                print(f"[{YELLOW}INFO{RESET}] Filtering DISABLED")
+
+        tasks = [
+            time_and_exec(
+                session,
+                f"{args.url.rstrip('/')}/{word.lstrip('/')}",
+                args.timeout
+            )
+            for word in words
+        ]
+
+        await asyncio.gather(*tasks)
+
+    # results
+    if not FOUND_URLS:
+        print('(result) Found Nothing')
+    else:
+        for url in FOUND_URLS:
+            print(f"# {url}")
+
+    print("#" * 45)
+
+
+# =========================
+# RUN
+# =========================
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
